@@ -1,65 +1,79 @@
-import Image from "next/image";
+import ContactForm from '@/components/ContactForm';
+import Banner from '@/components/Banner';
 
-export default function Home() {
+export default function Page({ searchParams }: { searchParams?: { sent?: string; error?: string } }) {
+  const sent = searchParams?.sent === '1';
+  const error = searchParams?.error === '1';
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <main className="min-h-screen bg-[#2B2B2B] text-[#F3F3F3]">
+      <Banner />
+      {sent && (
+        <div className="bg-[#1E1E1E] text-[#C5B693] px-4 py-3 text-sm">
+          Message sent successfully — we’ll reply soon.
+        </div>
+      )}
+      {error && (
+        <div className="bg-red-700/80 text-white px-4 py-3 text-sm">
+          Something went wrong. Please try again.
+        </div>
+      )}
+
+      {/* HERO */}
+      <section className="mx-auto max-w-6xl px-6 pt-24 pb-12">
+        <span className="inline-block rounded-full border border-white/10 bg-[#1E1E1E] px-3 py-1 text-xs text-[#C5B693]">
+          Crate Bunker™
+        </span>
+        <h1 className="mt-6 text-5xl font-extrabold tracking-wide uppercase">Built. Secured. Deployed.</h1>
+        <p className="mt-3 max-w-2xl text-[#E0E0E0]">
+          Crate Bunker designs, builds, and maintains digital infrastructure that never cracks under pressure.
+        </p>
+        <div className="mt-8 flex gap-3">
+          <a href="#contact" className="rounded-full bg-[#E57C23] px-6 py-3 font-semibold text-black hover:bg-black hover:text-[#E57C23] transition-colors">
+            Start Your Build
+          </a>
+          <a href="#about" className="rounded-full border border-[#C5B693]/40 px-6 py-3 font-semibold hover:bg-[#3A3A3A] transition-colors">
+            View Work
+          </a>
+        </div>
+      </section>
+
+      {/* ABOUT */}
+      <section id="about" className="border-t border-white/5 bg-[#242424]">
+        <div className="mx-auto max-w-6xl px-6 py-14">
+          <h2 className="text-2xl font-bold uppercase tracking-wide">We build reliable web systems.</h2>
+          <p className="mt-3 max-w-3xl text-[#D8D8D8]">
+            From first concept to long-term maintenance, Crate Bunker delivers dependable websites, clean code, and secure hosting.
           </p>
+          <ul className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              'Custom Web Development',
+              'Secure Hosting & Maintenance',
+              'Performance Optimization',
+              'Technical Support',
+            ].map((t) => (
+              <li key={t} className="rounded-xl border border-white/10 bg-[#2B2B2B] p-5">{t}</li>
+            ))}
+          </ul>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </section>
+
+      {/* CONTACT */}
+      <section id="contact" className="border-t border-white/5">
+        <div className="mx-auto max-w-6xl px-6 py-14">
+          <h2 className="text-2xl font-bold uppercase tracking-wide">Need a reliable build partner?</h2>
+          <p className="mt-2 text-[#D8D8D8]">Let’s talk about your next deployment.</p>
+
+        <ContactForm />
         </div>
-      </main>
-    </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="border-t border-white/5 bg-[#1E1E1E]">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-8 text-sm text-[#CFCFCF]">
+          <span>© 2025 Crate Bunker. All rights reserved.</span>
+          <span>Site by Crate Bunker™</span>
+        </div>
+      </footer>
+    </main>
   );
 }
