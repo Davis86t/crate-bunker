@@ -36,3 +36,11 @@ npm install
 
 # run dev server
 npm run dev
+```
+
+---
+
+## 🧱 Brand
+
+**Crate Bunker™** — dependable web systems built to last.  
+Site and code © 2025 Crate Bunker. All rights reserved.
