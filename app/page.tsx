@@ -1,23 +1,14 @@
 import ContactForm from '@/components/ContactForm';
 import Banner from '@/components/Banner';
 
-export default function Page({ searchParams }: { searchParams?: { sent?: string; error?: string } }) {
-  const sent = searchParams?.sent === '1';
-  const error = searchParams?.error === '1';
+export default async function Page({ searchParams }: { searchParams?: { sent?: string; error?: string } }) {
+    const sp = await searchParams;
+    const sent = sp?.sent === '1';
+    const error = sp?.error === '1';
   return (
     <main className="min-h-screen bg-[#2B2B2B] text-[#F3F3F3]">
       <Banner />
-      {sent && (
-        <div className="bg-[#1E1E1E] text-[#C5B693] px-4 py-3 text-sm">
-          Message sent successfully — we’ll reply soon.
-        </div>
-      )}
-      {error && (
-        <div className="bg-red-700/80 text-white px-4 py-3 text-sm">
-          Something went wrong. Please try again.
-        </div>
-      )}
-
+      
       {/* HERO */}
       <section className="mx-auto max-w-6xl px-6 pt-24 pb-12">
         <span className="inline-block rounded-full border border-white/10 bg-[#1E1E1E] px-3 py-1 text-xs text-[#C5B693]">
