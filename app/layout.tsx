@@ -1,7 +1,9 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata } from "next";
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
+import Banner from '@/components/Banner'; 
+import { Suspense } from 'react'
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,7 +15,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'Crate Bunker™ | Built. Secured. Deployed.',
   description:
     'Crate Bunker designs, builds, and maintains digital infrastructure that never cracks under pressure. Dependable web systems built to last.',
@@ -52,16 +54,13 @@ export const metadata = {
   },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body>
+        <Suspense fallback={null}>
+          <Banner />
+        </Suspense>
         <ServiceWorkerRegister />
         {children}
       </body>

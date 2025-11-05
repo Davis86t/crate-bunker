@@ -3,29 +3,68 @@
 @tailwind utilities;
 
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer components {
+  .cb-input {
+    @apply w-full rounded-2xl bg-[#1E1E1E] border border-white/10 px-4 py-3 text-[#F3F3F3]
+           placeholder:text-white/40 outline-none focus:ring-2 focus:ring-[#E57C23] focus:border-transparent;
   }
+
+  .cb-textarea {
+    @apply cb-input min-h-32;
+  }
+
+  .cb-btn {
+    @apply relative inline-flex items-center justify-center rounded-full px-6 py-3 font-semibold transition;
+    background: linear-gradient(180deg, #FFA14A 0%, #E57C23 100%);
+    color: #0B0B0B;
+    box-shadow:
+      0 6px 16px rgba(229,124,35,0.35),
+      0 1px 0 rgba(255,255,255,0.06) inset,
+      0 -1px 0 rgba(0,0,0,0.35) inset;
+  }
+  .cb-btn:hover {
+    filter: brightness(1.05);
+    box-shadow:
+      0 10px 24px rgba(229,124,35,0.45),
+      0 1px 0 rgba(255,255,255,0.08) inset,
+      0 -1px 0 rgba(0,0,0,0.4) inset;
+    transform: translateY(-0.5px);
+  }
+  .cb-btn:active {
+    filter: brightness(0.98);
+    transform: translateY(0.5px);
+  }
+
+  .cb-field {
+    @apply grid gap-2;
+  }
+  .cb-label {
+    @apply text-sm text-[#CFCFCF];
+  }
+
+  .cb-banner {
+    @apply mt-3 text-sm;
+  }
+  .cb-banner--queued { @apply text-yellow-400; }
+  .cb-banner--sent   { @apply text-green-400; }
+  .cb-banner--error  { @apply text-red-400; }
 }
 
-html { scroll-behavior: smooth; }
+
+/* Optional base styles — keep or tweak */
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  height: 100%;
+}
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #2B2B2B;
+  color: #F3F3F3;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
 }
+
+/* Utility helpers you used */
+.min-h-32 { min-height: 8rem; }
