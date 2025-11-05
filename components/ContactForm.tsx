@@ -15,6 +15,7 @@ type OutboxItem = {
 
 const OUTBOX_KEY = "cb:contact-outbox";
 const SENT_ONCE_KEY = "cb:sentOnce";
+const SENT_LOCK_HOURS = 1; // lockout duration
 
 function readOutbox(): OutboxItem[] {
   try {
@@ -53,19 +54,16 @@ function setParamNoScroll(updater: (url: URL) => void) {
 }
 
 /* ================================
-   Online probe (real network)
+   Online probe (robust)
+   - any response (even 404) => online
 ================================ */
-// robust online check: only network error/timeout => offline
 async function isOnline(): Promise<boolean> {
   if (!navigator.onLine) return false;
-
   const tryFetch = async (path: string) => {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 2500);
     try {
-      // GET and no reliance on res.ok — any response means we're online
       await fetch(`${path}?ts=${Date.now()}`, {
-        method: "GET",
         cache: "no-store",
         credentials: "same-origin",
         signal: ctrl.signal,
@@ -74,11 +72,9 @@ async function isOnline(): Promise<boolean> {
       return true;
     } catch {
       clearTimeout(t);
-      return false; // only thrown on real network failure/timeout
+      return false;
     }
   };
-
-  // Prefer an API route if present; fall back to root (404 is fine)
   return (await tryFetch("/api/ping")) || (await tryFetch("/"));
 }
 
@@ -88,51 +84,20 @@ export default function ContactForm() {
   const [sending, setSending] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [sentOnce, setSentOnce] = useState(false); // one-and-done lock
-  const [anchorRect, setAnchorRect] = useState<{
-    top: number;
-    left: number;
-    width: number;
-  } | null>(null);
-
-  function asHTMLElement(el: Element | null): HTMLElement | null {
-    return el instanceof HTMLElement ? el : null;
-  }
-
-  // local “already” nudge (inline toast; no scroll, no URL)
-  const [alreadyNudge, setAlreadyNudge] = useState(false);
-  const nudgeTimer = useRef<number | null>(null);
-  const pingAlreadyLocal = () => {
-    if (nudgeTimer.current) window.clearTimeout(nudgeTimer.current);
-    setAlreadyNudge(true);
-    nudgeTimer.current = window.setTimeout(() => setAlreadyNudge(false), 2200);
-  };
-
-  // Show “already sent” nudge over form
-  function showAlreadyOver(el: Element | null) {
-    const h = asHTMLElement(el);
-    if (!h) return;
-    const r = h.getBoundingClientRect(); // viewport coords for position: fixed
-    const top = Math.max(8, r.top - 56);
-    const left = Math.min(
-      window.innerWidth - 8,
-      Math.max(8, r.left + r.width / 2)
-    );
-    setAnchorRect({ top, left, width: r.width });
-    pingAlreadyLocal();
-  }
 
   useEffect(() => setHydrated(true), []);
   useEffect(() => {
     try {
-      setSentOnce(localStorage.getItem(SENT_ONCE_KEY) === "1");
+      const raw = localStorage.getItem(SENT_ONCE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (saved.ts && Date.now() - saved.ts < SENT_LOCK_HOURS * 3600 * 1000) {
+        setSentOnce(true);
+      } else {
+        localStorage.removeItem(SENT_ONCE_KEY); // expired
+      }
     } catch {}
   }, []);
-  useEffect(
-    () => () => {
-      if (nudgeTimer.current) window.clearTimeout(nudgeTimer.current);
-    },
-    []
-  );
 
   // Clear query params after banners fade (used for sent/error/queued only)
   const clearQuerySoon = (ms = 2800) => {
@@ -151,11 +116,13 @@ export default function ContactForm() {
   useEffect(() => {
     let running = false;
 
-    const normalizeIfStaleQueued = () => {
-      setParamNoScroll((url) => {
-        if (url.searchParams.get("queued") === "1")
-          url.searchParams.delete("queued");
-      });
+    const clearQueuedIfOnline = async () => {
+      if (await isOnline()) {
+        setParamNoScroll((url) => {
+          if (url.searchParams.get("queued") === "1")
+            url.searchParams.delete("queued");
+        });
+      }
     };
 
     const flush = async () => {
@@ -163,7 +130,7 @@ export default function ContactForm() {
       const online = await isOnline();
 
       if (online && !hasOutbox()) {
-        normalizeIfStaleQueued();
+        await clearQueuedIfOnline();
         return;
       }
       if (!online || !hasOutbox()) return;
@@ -192,7 +159,10 @@ export default function ContactForm() {
 
         if (anySent) {
           try {
-            localStorage.setItem(SENT_ONCE_KEY, "1");
+            localStorage.setItem(
+              SENT_ONCE_KEY,
+              JSON.stringify({ ts: Date.now() })
+            );
           } catch {}
           setSentOnce(true);
           // Compact success when coming from an offline flush
@@ -202,7 +172,7 @@ export default function ContactForm() {
           });
           clearQuerySoon(2500);
         } else {
-          normalizeIfStaleQueued();
+          await clearQueuedIfOnline();
         }
       } finally {
         running = false;
@@ -236,11 +206,8 @@ export default function ContactForm() {
     const form = e.currentTarget;
     const fd = new FormData(form);
 
-    // block after one success → local nudge only (no URL, no scroll)
-    if (sentOnce) {
-      pingAlreadyLocal();
-      return;
-    }
+    // After first success: show inline panel, readOnly fields, no URL churn
+    if (sentOnce) return;
 
     const online = await isOnline();
 
@@ -289,54 +256,23 @@ export default function ContactForm() {
   const action = useMemo(() => (hydrated ? "/api/contact" : "#"), [hydrated]);
   const method = useMemo(() => (hydrated ? "post" : "get"), [hydrated]);
 
-  // Capture focus/click/enter anywhere in form to trigger local "already" nudge
-  const captureAlready = (e: React.SyntheticEvent<HTMLFormElement>) => {
-    if (!sentOnce) return;
-    const target = e.target as Element | null;
-    const el = target ? target.closest("input, textarea, button") : null; // <- no undefined
-    showAlreadyOver(el);
-  };
-  const captureEnter = (e: React.KeyboardEvent<HTMLFormElement>) => {
-    if (!sentOnce) return;
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const active = document.activeElement as Element | null;
-      const el = active ? active.closest("input, textarea, button") : null;
-      showAlreadyOver(el);
-    }
-  };
-
   return hydrated ? (
     <form
       ref={formRef}
       method={method}
       action={action}
       onSubmit={onSubmit}
-      className="mt-6 grid max-w-xl gap-4 relative"
+      className="mt-6 grid max-w-xl gap-4"
       autoComplete="on"
       noValidate
-      onFocusCapture={captureAlready}
-      onClickCapture={captureAlready}
-      onKeyDownCapture={captureEnter}
     >
-      {/* already nudge (anchored above field, fade, no layout shift) */}
-      {anchorRect && (
+      {/* inline, static "already sent" banner — mobile-first, no layout jump */}
+      {sentOnce && (
         <div
           aria-live="polite"
-          className={`pointer-events-none fixed z-30 transition-opacity duration-[1200ms] ease-[cubic-bezier(0.4,0,0.2,1)]
-                      ${alreadyNudge ? "opacity-100" : "opacity-0"}`}
-          style={{
-            top: anchorRect.top, // viewport coords (no scrollY)
-            left: anchorRect.left,
-            transform: "translateX(-50%)",
-          }}
+          className="rounded-xl border border-[#E57C23]/30 bg-[#E57C23]/10 text-[#FFEEDB] px-4 py-3 text-sm shadow-[0_0_18px_1px_rgba(229,124,35,0.25)]"
         >
-          <div
-            className="rounded-2xl border border-[#E57C23]/30 bg-black/30 px-6 py-3 text-[#FFEEDB]
-                          shadow-[0_0_35px_4px_rgba(229,124,35,0.35)] backdrop-blur-sm text-sm font-medium"
-          >
-            <span>You've already sent a message.</span>
-          </div>
+          You’ve already sent a message. Thanks! We’ll get back to you soon.
         </div>
       )}
 
@@ -355,7 +291,6 @@ export default function ContactForm() {
           name="name"
           required
           autoComplete="name"
-          // soft-lock: focusable but immutable
           readOnly={sentOnce}
           className="w-full rounded-lg border border-white/10 bg-[#1F1F1F] px-3 py-2"
         />
@@ -388,22 +323,19 @@ export default function ContactForm() {
 
       <button
         type="submit"
-        disabled={sending} // not disabled by sentOnce; we intercept
+        disabled={sending || sentOnce}
         aria-disabled={sentOnce}
-        onClick={(e) => {
-          if (sentOnce) {
-            e.preventDefault();
-            pingAlreadyLocal();
-          }
-        }}
-        className={`mt-2 rounded-full px-6 py-3 font-semibold transition-colors
-          ${
-            sentOnce
-              ? "bg-[#E57C23] text-black opacity-60 cursor-not-allowed"
-              : "bg-[#E57C23] text-black hover:bg-black hover:text-[#E57C23]"
-          }`}
+        className={`mt-2 rounded-full px-6 py-3 font-semibold transition-colors ${
+          sentOnce
+            ? "bg-[#E57C23]/70 text-black cursor-not-allowed"
+            : "bg-[#E57C23] text-black hover:bg-black hover:text-[#E57C23]"
+        }`}
       >
-        {sending ? "Sending…" : "Deploy Request"}
+        {sentOnce
+          ? "Message received"
+          : sending
+          ? "Sending…"
+          : "Deploy Request"}
       </button>
     </form>
   ) : (
