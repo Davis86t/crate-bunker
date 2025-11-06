@@ -21,7 +21,7 @@ const KEY = 'cb:contact-outbox';
 
 export default function ContactFormQueued() {
   const router = useRouter();
-  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [_status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
 
   // POST helper defined BEFORE effects so it’s in scope
   const send = useCallback(async (payload: Payload): Promise<boolean> => {
