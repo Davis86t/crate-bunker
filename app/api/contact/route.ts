@@ -15,6 +15,7 @@ export const runtime = 'edge'
 
 const FROM = 'Crate Bunker <no-reply@cratebunker.com>'
 const resend = new Resend(process.env.RESEND_API_KEY)
+const to = ['hello@cratebunker.com'] as const;
 
 type Payload = { name: string; email: string; message: string; website?: string }
 
@@ -92,7 +93,7 @@ export async function POST(req: Request) {
 
     const { error } = await resend.emails.send({
       from: FROM,
-      to: ['hello@cratebunker.com'],
+      to,
       subject,
       replyTo: email,
       html
@@ -107,7 +108,7 @@ export async function POST(req: Request) {
 
     url.searchParams.set('sent', '1')
     return NextResponse.redirect(url.toString(), 303)
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('Contact POST error:', e)
     const url = new URL(req.url)
     url.searchParams.set('sent', '0')
