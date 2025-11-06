@@ -6,7 +6,6 @@ import ContactForm from '@/components/ContactForm';
 import Banner from '@/components/Banner';
 
 export default async function Page({ searchParams }: { searchParams?: { sent?: string; error?: string } }) {
-    const sp = await searchParams;
 
   return (
     <main className="min-h-screen bg-[#2B2B2B] text-[#F3F3F3]">
