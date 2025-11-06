@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 export default function NotFound() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-[#0E0E0E] text-[#F3F3F3] text-center">
@@ -8,12 +10,12 @@ export default function NotFound() {
         The digital crate you’re searching for doesn’t exist or has been
         secured in the bunker.
       </p>
-      <a
+      <Link
         href="/"
         className="mt-6 rounded-full bg-[#E57C23] px-5 py-2 font-semibold text-black hover:bg-[#ff923c] transition"
       >
         Return Home
-      </a>
+      </Link>
     </main>
   );
 }
