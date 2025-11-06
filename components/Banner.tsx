@@ -22,11 +22,6 @@ export default function Banner() {
     setTimeout(fn, 0);
   };
 
-  const hideTimer = setTimeout(() => {
-    setVisible(false);
-    setTimeout(() => setMounted(false), 300); // <-- no const cleanup
-  }, 4000);
-
   const smoothScrollToTop = useCallback(() => {
     try {
       window.scrollTo({ top: 0, behavior: "smooth" });
