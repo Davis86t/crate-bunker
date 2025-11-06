@@ -79,7 +79,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Missing RESEND_API_KEY' }, { status: 500 })
     }
 
-    const to = ['hello@cratebunker.com'] as const;
     const subject = `New contact form submission`
 
     const html = `
@@ -94,7 +93,7 @@ export async function POST(req: Request) {
 
     const { error } = await resend.emails.send({
       from: FROM,
-      to: TO,
+      to: 'hello@cratebunker.com',
       subject,
       replyTo: email,
       html
