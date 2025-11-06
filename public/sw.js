@@ -22,8 +22,8 @@ async function safePrecache(cache, urls) {
     try {
       // force a fresh fetch when online; won’t matter offline
       await cache.add(new Request(u, { cache: 'reload' }));
-    } catch (_) {
-      // ignore; we’ll still activate
+    } catch {
+      // ignore individual failures; continue install
     }
   }
 }
