@@ -5,11 +5,7 @@
 import ContactForm from "@/components/ContactForm";
 import Banner from "@/components/Banner";
 
-export default function Page({
-  /* params, */ searchParams: _searchParams,
-}: {
-  searchParams?: URLSearchParams;
-}) {
+export default function Page() {
   return (
     <main className="min-h-screen bg-[#2B2B2B] text-[#F3F3F3]">
       <Banner />
