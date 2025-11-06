@@ -74,8 +74,7 @@ export default function Banner() {
     const showTimer = setTimeout(() => setVisible(true), 30);
     const hideTimer = setTimeout(() => {
       setVisible(false);
-      const cleanup = setTimeout(() => setMounted(false), 300);
-      // no return here; we clear in outer cleanup
+      setTimeout(() => setMounted(false), 300);
     }, 4000);
 
     return () => {
