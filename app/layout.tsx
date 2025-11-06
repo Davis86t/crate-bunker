@@ -1,3 +1,7 @@
+// app/layout.tsx
+// Purpose: Global HTML shell. Injects Banner + SW registration.
+// Notes: Keep <body> lightweight; Banner uses fixed positioning.
+
 import "./globals.css";
 import { Geist, Geist_Mono } from "next/font/google";
 import type { Metadata } from "next";
