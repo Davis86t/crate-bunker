@@ -7,8 +7,7 @@ import Banner from '@/components/Banner';
 
 export default async function Page({ searchParams }: { searchParams?: { sent?: string; error?: string } }) {
     const sp = await searchParams;
-    const sent = sp?.sent === '1';
-    const error = sp?.error === '1';
+
   return (
     <main className="min-h-screen bg-[#2B2B2B] text-[#F3F3F3]">
       <Banner />
