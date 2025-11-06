@@ -1,10 +1,12 @@
+// components/ContactForm.tsx
+// Purpose: PWA-friendly contact form with offline queue, auto-flush,
+//          URL-driven banners, and 1-hour resend cooldown (localStorage).
+
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-/* ================================
-   Local queue (localStorage)
-================================ */
+// ---- Local queue (localStorage) ----
 type OutboxItem = {
   name: string;
   email: string;
@@ -15,7 +17,7 @@ type OutboxItem = {
 
 const OUTBOX_KEY = "cb:contact-outbox";
 const SENT_ONCE_KEY = "cb:sentOnce";
-const SENT_LOCK_HOURS = 1; // lockout duration
+const SENT_LOCK_HOURS = 1; // ⏱️ user can send again after 1h
 
 function readOutbox(): OutboxItem[] {
   try {
@@ -42,9 +44,7 @@ function hasOutbox() {
   return readOutbox().length > 0;
 }
 
-/* ================================
-   URL param helper (no rerender, no scroll)
-================================ */
+// ---- URL param helper (no rerender, no scroll) ----
 function setParamNoScroll(updater: (url: URL) => void) {
   try {
     const url = new URL(window.location.href);
@@ -53,10 +53,7 @@ function setParamNoScroll(updater: (url: URL) => void) {
   } catch {}
 }
 
-/* ================================
-   Online probe (robust)
-   - any response (even 404) => online
-================================ */
+// ---- Online probe (robust: any response => online) ----
 async function isOnline(): Promise<boolean> {
   if (!navigator.onLine) return false;
   const tryFetch = async (path: string) => {
@@ -69,7 +66,7 @@ async function isOnline(): Promise<boolean> {
         signal: ctrl.signal,
       });
       clearTimeout(t);
-      return true;
+      return true; // 200/404 both prove connectivity
     } catch {
       clearTimeout(t);
       return false;
@@ -83,23 +80,25 @@ export default function ContactForm() {
 
   const [sending, setSending] = useState(false);
   const [hydrated, setHydrated] = useState(false);
-  const [sentOnce, setSentOnce] = useState(false); // one-and-done lock
+  const [sentOnce, setSentOnce] = useState(false); // one-and-done (with cooldown)
 
   useEffect(() => setHydrated(true), []);
+
+  // Load cooldown; expire automatically after SENT_LOCK_HOURS
   useEffect(() => {
     try {
       const raw = localStorage.getItem(SENT_ONCE_KEY);
       if (!raw) return;
       const saved = JSON.parse(raw);
-      if (saved.ts && Date.now() - saved.ts < SENT_LOCK_HOURS * 3600 * 1000) {
+      if (saved?.ts && Date.now() - saved.ts < SENT_LOCK_HOURS * 3600 * 1000) {
         setSentOnce(true);
       } else {
-        localStorage.removeItem(SENT_ONCE_KEY); // expired
+        localStorage.removeItem(SENT_ONCE_KEY);
       }
     } catch {}
   }, []);
 
-  // Clear query params after banners fade (used for sent/error/queued only)
+  // Clear query params after banners fade (sent/error/queued only)
   const clearQuerySoon = (ms = 2800) => {
     setTimeout(() => {
       setParamNoScroll((url) => {
@@ -110,9 +109,7 @@ export default function ContactForm() {
     }, ms);
   };
 
-  /* ================================
-     Auto-flush queue when truly online
-  ================================== */
+  // ---- Auto-flush queue when truly online ----
   useEffect(() => {
     let running = false;
 
@@ -165,7 +162,6 @@ export default function ContactForm() {
             );
           } catch {}
           setSentOnce(true);
-          // Compact success when coming from an offline flush
           setParamNoScroll((url) => {
             url.searchParams.set("sent", "1");
             url.searchParams.set("compact", "1");
@@ -198,20 +194,19 @@ export default function ContactForm() {
     };
   }, []);
 
-  /* ================================
-     Submit
-  ================================== */
+  // ---- Submit ----
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
     const fd = new FormData(form);
 
-    // After first success: show inline panel, readOnly fields, no URL churn
+    // Locked (cooldown): do nothing; inline banner + readOnly fields communicate state
     if (sentOnce) return;
 
     const online = await isOnline();
 
     if (!online) {
+      // Queue locally and show compact "queued"
       enqueue({
         name: String(fd.get("name") || ""),
         email: String(fd.get("email") || ""),
@@ -226,13 +221,17 @@ export default function ContactForm() {
       return;
     }
 
+    // Direct online submit
     setSending(true);
     try {
       const res = await fetch("/api/contact", { method: "POST", body: fd });
       const ok = res.ok;
       if (ok) {
         try {
-          localStorage.setItem(SENT_ONCE_KEY, "1");
+          localStorage.setItem(
+            SENT_ONCE_KEY,
+            JSON.stringify({ ts: Date.now() })
+          );
         } catch {}
         setSentOnce(true);
       }
@@ -252,7 +251,7 @@ export default function ContactForm() {
     }
   }
 
-  // We render NO <form> before hydration
+  // Guard: avoid native submit before hydration (SSR → CSR)
   const action = useMemo(() => (hydrated ? "/api/contact" : "#"), [hydrated]);
   const method = useMemo(() => (hydrated ? "post" : "get"), [hydrated]);
 
@@ -266,7 +265,7 @@ export default function ContactForm() {
       autoComplete="on"
       noValidate
     >
-      {/* inline, static "already sent" banner — mobile-first, no layout jump */}
+      {/* Inline mobile-first banner for the cooldown/lock */}
       {sentOnce && (
         <div
           aria-live="polite"
@@ -276,7 +275,7 @@ export default function ContactForm() {
         </div>
       )}
 
-      {/* honeypot */}
+      {/* Honeypot */}
       <input
         type="text"
         name="website"
@@ -339,6 +338,7 @@ export default function ContactForm() {
       </button>
     </form>
   ) : (
+    // Pre-hydration skeleton (no native submit)
     <div
       role="form"
       aria-label="Contact form"
