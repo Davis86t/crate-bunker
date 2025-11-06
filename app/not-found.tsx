@@ -1,19 +1,19 @@
+// app/not-found.tsx
+// Purpose: 404 boundary for unknown routes.
+
 export default function NotFound() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-[#0E0E0E] text-[#F3F3F3] text-center">
-      <h1 className="text-4xl font-bold tracking-tight text-[#E57C23]">
-        404 — Crate Not Found
-      </h1>
-      <p className="mt-2 text-sm text-gray-400 max-w-md">
-        The digital crate you’re searching for doesn’t exist or has been
-        secured in the bunker.
+    <div className="mx-auto max-w-xl p-6">
+      <h2 className="text-xl font-semibold">Page not found</h2>
+      <p className="mt-2 text-sm text-white/70">
+        Check the URL or return to the homepage.
       </p>
       <a
+        className="mt-4 inline-block rounded-full bg-[#E57C23] px-4 py-2 font-semibold text-black"
         href="/"
-        className="mt-6 rounded-full bg-[#E57C23] px-5 py-2 font-semibold text-black hover:bg-[#ff923c] transition"
       >
-        Return Home
+        Go home
       </a>
-    </main>
+    </div>
   );
 }
