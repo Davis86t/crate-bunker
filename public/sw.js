@@ -1,10 +1,4 @@
-/* public/sw.js
-   Purpose: Offline shell for Crate Bunker.
-   - Precache core assets (offline.html, CSS, icons)
-   - Navigation requests → network-first with offline fallback
-   - API POST/JSON bypass (never cache /api/*)
-   - Static assets cache-first with versioning
-*/
+/* Crate Bunker SW (v8) — resilient install, no-dino */
 const CACHE = 'crate-bunker-v8';
 
 // Only cache files that actually exist in your project.
@@ -22,8 +16,8 @@ async function safePrecache(cache, urls) {
     try {
       // force a fresh fetch when online; won’t matter offline
       await cache.add(new Request(u, { cache: 'reload' }));
-    } catch {
-      // ignore individual failures; continue install
+    } catch (_) {
+      // ignore; we’ll still activate
     }
   }
 }

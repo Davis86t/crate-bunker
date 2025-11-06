@@ -1,94 +1,91 @@
 // components/ContactFormQueued.tsx
-// Purpose: Flush a queued contact payload when back online, then refresh the page.
-// Notes:
-// - Reads localStorage key 'cb:contact-outbox' (array of Payloads).
-// - Posts each payload to /api/contact; treats 303 as success.
-// - On success, removes payload and refreshes the page so Banner can reflect state.
-// - Headless component: no UI rendered.
-
 'use client';
-
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-type Payload = {
-  name: string;
-  email: string;
-  message: string;
-  website?: string;
-};
-
+type Payload = { name: string; email: string; message: string; website?: string };
 const KEY = 'cb:contact-outbox';
 
 export default function ContactFormQueued() {
+  const [online, setOnline] = useState(true);
+  const [status, setStatus] = useState<'idle'|'queued'|'sending'|'sent'|'error'>('idle');
   const router = useRouter();
-  // keep an internal status for debugging; underscore silences “unused” lint if not read
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [_status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
 
-  // POST helper (declared before effects so it’s in scope)
-  const send = useCallback(async (payload: Payload): Promise<boolean> => {
+  useEffect(() => {
+    const sync = () => setOnline(navigator.onLine);
+    sync();
+    window.addEventListener('online', sync);
+    window.addEventListener('offline', sync);
+    return () => { window.removeEventListener('online', sync); window.removeEventListener('offline', sync); };
+  }, []);
+
+  // Flush queued payload when we regain connectivity
+  useEffect(() => {
+    if (!online) return;
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return;
+    (async () => {
+      setStatus('sending');
+      try {
+        const ok = await send(JSON.parse(raw) as Payload);
+        if (ok) {
+          localStorage.removeItem(KEY);
+          setStatus('sent');
+          router.replace('/?sent=1'); // no full navigation, no SW dependency
+        } else {
+          setStatus('error');
+        }
+      } catch { setStatus('error'); }
+    })();
+  }, [online, router]);
+
+  async function send(payload: Payload) {
     const res = await fetch('/api/contact', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
       body: JSON.stringify(payload),
-      redirect: 'manual', // interpret 303 as success
+      redirect: 'manual', // DON’T auto-follow 303; we handle it
     });
-    return res.ok || res.status === 303 || res.status === 204;
-  }, []);
+    return res.ok || res.status === 303;
+  }
 
-  // Flush queue once on mount + whenever we regain connectivity
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const flush = async () => {
-      if (!navigator.onLine) return;
-
-      const raw = localStorage.getItem(KEY);
-      if (!raw) return;
-
-      let q: Payload[];
-      try {
-        q = JSON.parse(raw) as Payload[];
-      } catch {
-        localStorage.removeItem(KEY);
-        return;
-      }
-      if (!Array.isArray(q) || q.length === 0) return;
-
-      setStatus('sending');
-
-      // Try send head, pop when OK, stop early on failure to retry later
-      const next = [...q];
-      while (next.length) {
-        const item = next[0];
-        try {
-          const ok = await send(item);
-          if (!ok) break;
-          next.shift();
-        } catch {
-          break;
-        }
-      }
-
-      if (next.length === 0) {
-        localStorage.removeItem(KEY);
-        setStatus('sent');
-        router.refresh(); // ensure banners and SSR bits update
-      } else {
-        localStorage.setItem(KEY, JSON.stringify(next));
-        setStatus('error'); // not fully sent; will retry later
-      }
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault(); // hard stop navigation
+    const fd = new FormData(e.currentTarget);
+    const payload: Payload = {
+      name: (fd.get('name') || '').toString(),
+      email: (fd.get('email') || '').toString(),
+      message: (fd.get('message') || '').toString(),
+      website: (fd.get('website') || '').toString(), // honeypot
     };
 
-    // run once
-    void flush();
+    if (!online) {
+      localStorage.setItem(KEY, JSON.stringify(payload));
+      setStatus('queued');
+      alert('Saved offline. We’ll send it when you reconnect.');
+      return; // NO navigation → no dino
+    }
 
-    // also listen to “online” resume
-    const onOnline = () => void flush();
-    window.addEventListener('online', onOnline);
-    return () => window.removeEventListener('online', onOnline);
-  }, [router, send]);
+    setStatus('sending');
+    try {
+      const ok = await send(payload);
+      setStatus(ok ? 'sent' : 'error');
+      if (ok) router.replace('/?sent=1'); // avoid full page load
+    } catch { setStatus('error'); }
+  }
 
-  return null; // headless
+  return (
+    // IMPORTANT: no action/method here; we fully control submission
+    <form onSubmit={onSubmit} className="grid gap-3" noValidate>
+      <input name="name" placeholder="Name" required />
+      <input name="email" type="email" placeholder="Email" required />
+      <textarea name="message" placeholder="Message" required />
+      <input name="website" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
+      <button className="rounded-full bg-[#E57C23] px-5 py-2 font-semibold text-black">
+        {online ? (status === 'sending' ? 'Sending…' : 'Send') : 'Save & Auto-Send'}
+      </button>
+      {status === 'queued' && <p className="text-xs text-gray-400">Queued. Will auto-send when online.</p>}
+      {status === 'error' && <p className="text-xs text-red-400">Couldn’t send. Try again when online.</p>}
+    </form>
+  );
 }

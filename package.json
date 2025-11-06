@@ -6,7 +6,6 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit",
     "lint": "eslint"
   },
   "dependencies": {
@@ -14,8 +13,7 @@
     "next": "16.0.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "resend": "^6.4.0",
-    "tsc": "^2.0.4"
+    "resend": "^6.4.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

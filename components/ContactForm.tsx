@@ -1,209 +1,378 @@
-// components/ContactForm.tsx
-// Purpose: Collect + submit contact messages with offline queue + 1h resend cooldown.
-// Notes:
-// - If offline (or network fails), queue payload in localStorage (cb:contact-outbox) for later auto-flush.
-// - Uses a 1-hour cooldown via localStorage (cb:contact-last-sent) to prevent rapid re-sends.
-// - Honeypot "website" blocks obvious bots.
-// - Treat HTTP 303 from /api/contact as success (the API redirects on success by design).
+"use client";
 
-'use client';
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-
-type Payload = {
+/* ================================
+   Local queue (localStorage)
+================================ */
+type OutboxItem = {
   name: string;
   email: string;
   message: string;
-  website?: string; // honeypot
+  website?: string;
+  ts: number;
 };
 
-const OUTBOX_KEY = 'cb:contact-outbox';          // array of queued Payloads
-const LAST_SENT_KEY = 'cb:contact-last-sent';    // number (ms since epoch)
-const COOLDOWN_MS = 60 * 60 * 1000;              // 1 hour
+const OUTBOX_KEY = "cb:contact-outbox";
+const SENT_ONCE_KEY = "cb:sentOnce";
+const SENT_LOCK_HOURS = 1; // lockout duration
+
+function readOutbox(): OutboxItem[] {
+  try {
+    return JSON.parse(localStorage.getItem(OUTBOX_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+function writeOutbox(items: OutboxItem[]) {
+  localStorage.setItem(OUTBOX_KEY, JSON.stringify(items));
+}
+function enqueue(item: OutboxItem) {
+  const q = readOutbox();
+  q.push(item);
+  writeOutbox(q);
+}
+function dequeue(): OutboxItem | undefined {
+  const q = readOutbox();
+  const item = q.shift();
+  writeOutbox(q);
+  return item;
+}
+function hasOutbox() {
+  return readOutbox().length > 0;
+}
+
+/* ================================
+   URL param helper (no rerender, no scroll)
+================================ */
+function setParamNoScroll(updater: (url: URL) => void) {
+  try {
+    const url = new URL(window.location.href);
+    updater(url);
+    window.history.replaceState({}, "", url.toString());
+  } catch {}
+}
+
+/* ================================
+   Online probe (robust)
+   - any response (even 404) => online
+================================ */
+async function isOnline(): Promise<boolean> {
+  if (!navigator.onLine) return false;
+  const tryFetch = async (path: string) => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 2500);
+    try {
+      await fetch(`${path}?ts=${Date.now()}`, {
+        cache: "no-store",
+        credentials: "same-origin",
+        signal: ctrl.signal,
+      });
+      clearTimeout(t);
+      return true;
+    } catch {
+      clearTimeout(t);
+      return false;
+    }
+  };
+  return (await tryFetch("/api/ping")) || (await tryFetch("/"));
+}
 
 export default function ContactForm() {
-  // ----- FORM STATE -----
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [message, setMessage] = useState('');
-  const websiteRef = useRef<HTMLInputElement | null>(null); // honeypot (uncontrolled)
-  const [submitting, setSubmitting] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
-  // ----- DERIVED: COOLDOWN & ONLINE STATE -----
-  const [now, setNow] = useState(() => Date.now());
-  const online = typeof navigator !== 'undefined' ? navigator.onLine : true;
+  const [sending, setSending] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  const [sentOnce, setSentOnce] = useState(false); // one-and-done lock
 
-  // tick every ~15s so cooldown label can update without reload
+  useEffect(() => setHydrated(true), []);
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 15000);
-    return () => clearInterval(t);
-  }, []);
-
-  const cooldownRemaining = useMemo(() => {
-    if (typeof window === 'undefined') return 0;
-    const last = Number(localStorage.getItem(LAST_SENT_KEY) || 0);
-    const rem = last + COOLDOWN_MS - now;
-    return rem > 0 ? rem : 0;
-  }, [now]);
-
-  const inCooldown = cooldownRemaining > 0;
-
-  // ----- HELPERS: OUTBOX READ/WRITE -----
-  const readOutbox = useCallback((): Payload[] => {
-    if (typeof window === 'undefined') return [];
     try {
-      return JSON.parse(localStorage.getItem(OUTBOX_KEY) || '[]') as Payload[];
-    } catch {
-      return [];
-    }
+      const raw = localStorage.getItem(SENT_ONCE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (saved.ts && Date.now() - saved.ts < SENT_LOCK_HOURS * 3600 * 1000) {
+        setSentOnce(true);
+      } else {
+        localStorage.removeItem(SENT_ONCE_KEY); // expired
+      }
+    } catch {}
   }, []);
 
-  const writeOutbox = useCallback((items: Payload[]) => {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(OUTBOX_KEY, JSON.stringify(items));
-  }, []);
+  // Clear query params after banners fade (used for sent/error/queued only)
+  const clearQuerySoon = (ms = 2800) => {
+    setTimeout(() => {
+      setParamNoScroll((url) => {
+        ["sent", "error", "queued", "compact", "already"].forEach((k) =>
+          url.searchParams.delete(k)
+        );
+      });
+    }, ms);
+  };
 
-  const enqueue = useCallback((p: Payload) => {
-    const q = readOutbox();
-    q.push(p);
-    writeOutbox(q);
-  }, [readOutbox, writeOutbox]);
+  /* ================================
+     Auto-flush queue when truly online
+  ================================== */
+  useEffect(() => {
+    let running = false;
 
-  // ----- VALIDATION (minimal) -----
-  const isEmail = (e: string) => /.+@.+\..+/.test(e);
-  const canSubmit = name.trim() && isEmail(email) && message.trim() && !submitting && !inCooldown;
-
-  // ----- NETWORK SEND (303 counts as success) -----
-  const send = useCallback(async (payload: Payload): Promise<boolean> => {
-    const res = await fetch('/api/contact', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
-      body: JSON.stringify(payload),
-      redirect: 'manual', // we treat a 303 as success without following it here
-    });
-    return res.ok || res.status === 303 || res.status === 204;
-  }, []);
-
-  // ----- SUBMIT HANDLER -----
-  const onSubmit = useCallback(async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-
-    const payload: Payload = {
-      name: name.trim(),
-      email: email.trim(),
-      message: message.trim(),
-      website: websiteRef.current?.value || '', // honeypot
+    const clearQueuedIfOnline = async () => {
+      if (await isOnline()) {
+        setParamNoScroll((url) => {
+          if (url.searchParams.get("queued") === "1")
+            url.searchParams.delete("queued");
+        });
+      }
     };
 
-    // quick client validation
-    if (!payload.name || !isEmail(payload.email) || !payload.message) return;
+    const flush = async () => {
+      if (running) return;
+      const online = await isOnline();
 
-    // honeypot trips → behave like success but ignore
-    if (payload.website) {
-      // pretend sent to avoid teaching bots; do not touch cooldown/outbox
+      if (online && !hasOutbox()) {
+        await clearQueuedIfOnline();
+        return;
+      }
+      if (!online || !hasOutbox()) return;
+
+      running = true;
+      let anySent = false;
+      try {
+        while (hasOutbox() && (await isOnline())) {
+          const next = dequeue();
+          if (!next) break;
+
+          const fd = new FormData();
+          fd.set("name", next.name);
+          fd.set("email", next.email);
+          fd.set("message", next.message);
+          if (next.website) fd.set("website", next.website);
+
+          const res = await fetch("/api/contact", { method: "POST", body: fd });
+          if (!res.ok) {
+            const rest = readOutbox();
+            writeOutbox([next, ...rest]);
+            break;
+          }
+          anySent = true;
+        }
+
+        if (anySent) {
+          try {
+            localStorage.setItem(
+              SENT_ONCE_KEY,
+              JSON.stringify({ ts: Date.now() })
+            );
+          } catch {}
+          setSentOnce(true);
+          // Compact success when coming from an offline flush
+          setParamNoScroll((url) => {
+            url.searchParams.set("sent", "1");
+            url.searchParams.set("compact", "1");
+          });
+          clearQuerySoon(2500);
+        } else {
+          await clearQueuedIfOnline();
+        }
+      } finally {
+        running = false;
+      }
+    };
+
+    const onOnline = () => flush();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") flush();
+    };
+    const interval = setInterval(() => {
+      if (hasOutbox()) flush();
+    }, 8000);
+
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisible);
+    flush();
+
+    return () => {
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(interval);
+    };
+  }, []);
+
+  /* ================================
+     Submit
+  ================================== */
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+
+    // After first success: show inline panel, readOnly fields, no URL churn
+    if (sentOnce) return;
+
+    const online = await isOnline();
+
+    if (!online) {
+      enqueue({
+        name: String(fd.get("name") || ""),
+        email: String(fd.get("email") || ""),
+        message: String(fd.get("message") || ""),
+        website: String(fd.get("website") || "") || undefined,
+        ts: Date.now(),
+      });
+      setParamNoScroll((url) => {
+        url.searchParams.set("queued", "1");
+      });
+      form.reset();
       return;
     }
 
-    // Respect cooldown
-    if (inCooldown) return;
-
-    setSubmitting(true);
+    setSending(true);
     try {
-      if (!online) {
-        // offline: queue and rely on queued flusher + Banner UX
-        enqueue(payload);
-        // allow UI to show success banner and lockout
-        localStorage.setItem(LAST_SENT_KEY, String(Date.now()));
-        // optional: nudge UI (page refresh/Router refresh handled elsewhere)
-        return;
-      }
-
-      const ok = await send(payload);
+      const res = await fetch("/api/contact", { method: "POST", body: fd });
+      const ok = res.ok;
       if (ok) {
-        // lock future sends for 1 hour
-        localStorage.setItem(LAST_SENT_KEY, String(Date.now()));
-        // clear fields
-        setName(''); setEmail(''); setMessage('');
-      } else {
-        // network responded but not ok → enqueue for safety
-        enqueue(payload);
+        try {
+          localStorage.setItem(SENT_ONCE_KEY, "1");
+        } catch {}
+        setSentOnce(true);
+      }
+      setParamNoScroll((url) => {
+        url.searchParams.set(ok ? "sent" : "error", "1");
+      });
+      if (ok) {
+        form.reset();
+        clearQuerySoon(2600);
       }
     } catch {
-      // fetch failed → enqueue
-      enqueue(payload);
+      setParamNoScroll((url) => {
+        url.searchParams.set("error", "1");
+      });
     } finally {
-      setSubmitting(false);
+      setSending(false);
     }
-  }, [name, email, message, inCooldown, online, enqueue, send]);
+  }
 
-  // ----- RENDER -----
-  const buttonLabel = submitting
-    ? 'Sending…'
-    : inCooldown
-      ? `Cooldown (${Math.ceil(cooldownRemaining / 60000)}m)`
-      : online ? 'Send' : 'Send when online';
+  // We render NO <form> before hydration
+  const action = useMemo(() => (hydrated ? "/api/contact" : "#"), [hydrated]);
+  const method = useMemo(() => (hydrated ? "post" : "get"), [hydrated]);
 
-  return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      {/* Honeypot (hidden from users) */}
+  return hydrated ? (
+    <form
+      ref={formRef}
+      method={method}
+      action={action}
+      onSubmit={onSubmit}
+      className="mt-6 grid max-w-xl gap-4"
+      autoComplete="on"
+      noValidate
+    >
+      {/* inline, static "already sent" banner — mobile-first, no layout jump */}
+      {sentOnce && (
+        <div
+          aria-live="polite"
+          className="rounded-xl border border-[#E57C23]/30 bg-[#E57C23]/10 text-[#FFEEDB] px-4 py-3 text-sm shadow-[0_0_18px_1px_rgba(229,124,35,0.25)]"
+        >
+          You’ve already sent a message. Thanks! We’ll get back to you soon.
+        </div>
+      )}
+
+      {/* honeypot */}
       <input
-        ref={websiteRef}
-        name="website"
         type="text"
+        name="website"
+        className="hidden"
         tabIndex={-1}
         autoComplete="off"
-        className="hidden"
-        aria-hidden="true"
       />
 
-      {/* Name */}
       <div>
-        <label className="block text-sm font-medium">Name</label>
+        <label className="mb-1 block text-sm">Name</label>
         <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          name="name"
           required
-          className="mt-1 w-full rounded-md bg-white/5 px-3 py-2 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-white/30"
+          autoComplete="name"
+          readOnly={sentOnce}
+          className="w-full rounded-lg border border-white/10 bg-[#1F1F1F] px-3 py-2"
         />
       </div>
 
-      {/* Email */}
       <div>
-        <label className="block text-sm font-medium">Email</label>
+        <label className="mb-1 block text-sm">Email</label>
         <input
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
           type="email"
-          inputMode="email"
+          name="email"
           required
-          className="mt-1 w-full rounded-md bg-white/5 px-3 py-2 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-white/30"
+          autoComplete="email"
+          inputMode="email"
+          readOnly={sentOnce}
+          className="w-full rounded-lg border border-white/10 bg-[#1F1F1F] px-3 py-2"
         />
       </div>
 
-      {/* Message */}
       <div>
-        <label className="block text-sm font-medium">Message</label>
+        <label className="mb-1 block text-sm">Message</label>
         <textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          required
+          name="message"
           rows={5}
-          className="mt-1 w-full rounded-md bg-white/5 px-3 py-2 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-white/30"
+          required
+          autoComplete="off"
+          readOnly={sentOnce}
+          className="w-full rounded-lg border border-white/10 bg-[#1F1F1F] px-3 py-2"
         />
       </div>
 
       <button
         type="submit"
-        disabled={!canSubmit}
-        className="rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/20 disabled:opacity-50"
+        disabled={sending || sentOnce}
+        aria-disabled={sentOnce}
+        className={`mt-2 rounded-full px-6 py-3 font-semibold transition-colors ${
+          sentOnce
+            ? "bg-[#E57C23]/70 text-black cursor-not-allowed"
+            : "bg-[#E57C23] text-black hover:bg-black hover:text-[#E57C23]"
+        }`}
       >
-        {buttonLabel}
+        {sentOnce
+          ? "Message received"
+          : sending
+          ? "Sending…"
+          : "Deploy Request"}
       </button>
-
-      {/* Optional helper text */}
-      <p className="text-xs text-white/60">
-        We’ll send from <code>no-reply@cratebunker.com</code>. If you’re offline, your message will auto-send when you’re back online.
-      </p>
     </form>
+  ) : (
+    <div
+      role="form"
+      aria-label="Contact form"
+      className="mt-6 grid max-w-xl gap-4"
+    >
+      <div>
+        <label className="mb-1 block text-sm">Name</label>
+        <input
+          disabled
+          className="w-full rounded-lg border border-white/10 bg-[#1F1F1F] px-3 py-2 opacity-70"
+        />
+      </div>
+      <div>
+        <label className="mb-1 block text-sm">Email</label>
+        <input
+          disabled
+          className="w-full rounded-lg border border-white/10 bg-[#1F1F1F] px-3 py-2 opacity-70"
+        />
+      </div>
+      <div>
+        <label className="mb-1 block text-sm">Message</label>
+        <textarea
+          rows={5}
+          disabled
+          className="w-full rounded-lg border border-white/10 bg-[#1F1F1F] px-3 py-2 opacity-70"
+        />
+      </div>
+      <button
+        type="button"
+        className="mt-2 rounded-full bg-[#E57C23] px-6 py-3 font-semibold text-black opacity-70"
+        aria-disabled="true"
+      >
+        Deploy Request
+      </button>
+    </div>
   );
 }
