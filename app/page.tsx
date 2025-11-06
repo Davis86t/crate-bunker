@@ -1,3 +1,7 @@
+// app/page.tsx
+// Purpose: Homepage shell + hero.
+// Notes: Keep above-the-fold light; avoid blocking fonts/images.
+
 import ContactForm from '@/components/ContactForm';
 import Banner from '@/components/Banner';
 
