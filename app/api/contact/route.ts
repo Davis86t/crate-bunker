@@ -15,8 +15,6 @@ export const runtime = 'edge'
 
 const FROM = 'Crate Bunker <no-reply@cratebunker.com>'
 const resend = new Resend(process.env.RESEND_API_KEY)
-const TO: string[] = ['hello@cratebunker.com'];
-
 
 type Payload = { name: string; email: string; message: string; website?: string }
 
