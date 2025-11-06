@@ -15,7 +15,8 @@ export const runtime = 'edge'
 
 const FROM = 'Crate Bunker <no-reply@cratebunker.com>'
 const resend = new Resend(process.env.RESEND_API_KEY)
-const to = ['hello@cratebunker.com'] as const;
+const TO: string[] = ['hello@cratebunker.com'];
+
 
 type Payload = { name: string; email: string; message: string; website?: string }
 
@@ -78,7 +79,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Missing RESEND_API_KEY' }, { status: 500 })
     }
 
-    const to = ['hello@cratebunker.com']
+    const to = ['hello@cratebunker.com'] as const;
     const subject = `New contact form submission`
 
     const html = `
@@ -93,7 +94,7 @@ export async function POST(req: Request) {
 
     const { error } = await resend.emails.send({
       from: FROM,
-      to,
+      to: TO,
       subject,
       replyTo: email,
       html
