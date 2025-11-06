@@ -44,3 +44,7 @@ npm run dev
 
 **Crate Bunker™** — dependable web systems built to last.  
 Site and code © 2025 Crate Bunker. All rights reserved.
+---
+
+© 2025 Crate Bunker. All rights reserved. CRATE BUNKER™ is a trademark of Crate Bunker.
+
