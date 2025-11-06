@@ -1,3 +1,6 @@
+// components/ContactForm.tsx
+// Purpose: Collect & submit contact messages.
+// Notes: Offline queue (localStorage), 1h resend cooldown, honeypot "website", 303 treated as success.
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -17,6 +20,7 @@ const OUTBOX_KEY = "cb:contact-outbox";
 const SENT_ONCE_KEY = "cb:sentOnce";
 const SENT_LOCK_HOURS = 1; // lockout duration
 
+/** Safely read the outbox queue from localStorage (returns [] on parse errors). */
 function readOutbox(): OutboxItem[] {
   try {
     return JSON.parse(localStorage.getItem(OUTBOX_KEY) || "[]");
@@ -24,27 +28,32 @@ function readOutbox(): OutboxItem[] {
     return [];
   }
 }
+/** Persist the full outbox queue back to localStorage. */
 function writeOutbox(items: OutboxItem[]) {
   localStorage.setItem(OUTBOX_KEY, JSON.stringify(items));
 }
+/** Append a single item to the end of the outbox queue. */
 function enqueue(item: OutboxItem) {
   const q = readOutbox();
   q.push(item);
   writeOutbox(q);
 }
+/** Remove and return the first queued item (FIFO); returns undefined if empty. */
 function dequeue(): OutboxItem | undefined {
   const q = readOutbox();
   const item = q.shift();
   writeOutbox(q);
   return item;
 }
+/** True if the outbox currently contains at least one queued item. */
 function hasOutbox() {
   return readOutbox().length > 0;
 }
 
-/* ================================
-   URL param helper (no rerender, no scroll)
-================================ */
+/**
+ * Update the current URL's search params without causing navigation or scroll.
+ * Useful to show temporary flags (sent/error/queued) without history spam.
+ */
 function setParamNoScroll(updater: (url: URL) => void) {
   try {
     const url = new URL(window.location.href);
@@ -53,10 +62,11 @@ function setParamNoScroll(updater: (url: URL) => void) {
   } catch {}
 }
 
-/* ================================
-   Online probe (robust)
-   - any response (even 404) => online
-================================ */
+/**
+ * Robust online probe:
+ * - Requires `navigator.onLine` AND a fetch that doesn't timeout.
+ * - Any HTTP response (even 404) counts as "online".
+ */
 async function isOnline(): Promise<boolean> {
   if (!navigator.onLine) return false;
   const tryFetch = async (path: string) => {
@@ -86,6 +96,8 @@ export default function ContactForm() {
   const [sentOnce, setSentOnce] = useState(false); // one-and-done lock
 
   useEffect(() => setHydrated(true), []);
+
+  // On mount: hydrate and restore 1h lockout state from localStorage.
   useEffect(() => {
     try {
       const raw = localStorage.getItem(SENT_ONCE_KEY);
@@ -99,7 +111,10 @@ export default function ContactForm() {
     } catch {}
   }, []);
 
-  // Clear query params after banners fade (used for sent/error/queued only)
+  /**
+   * After showing a banner via URL flags, remove the flags after a short delay
+   * so they don't persist on refresh or copy/paste.
+   */
   const clearQuerySoon = (ms = 2800) => {
     setTimeout(() => {
       setParamNoScroll((url) => {
@@ -110,9 +125,7 @@ export default function ContactForm() {
     }, ms);
   };
 
-  /* ================================
-     Auto-flush queue when truly online
-  ================================== */
+  // Periodically try to flush queue; also on online/visible transitions.
   useEffect(() => {
     let running = false;
 
@@ -198,9 +211,7 @@ export default function ContactForm() {
     };
   }, []);
 
-  /* ================================
-     Submit
-  ================================== */
+  /** Handle submit: validate, respect 1h lock, send online or enqueue offline. */
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
@@ -232,7 +243,7 @@ export default function ContactForm() {
       const ok = res.ok;
       if (ok) {
         try {
-          localStorage.setItem(SENT_ONCE_KEY, "1");
+          localStorage.setItem(SENT_ONCE_KEY, JSON.stringify({ ts: Date.now() }));
         } catch {}
         setSentOnce(true);
       }
