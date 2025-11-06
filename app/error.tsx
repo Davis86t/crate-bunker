@@ -1,26 +1,32 @@
-'use client';
+// app/error.tsx
+// Purpose: Client error boundary for App Router.
+// Notes: Runs on the client; reset() allows retry.
 
-export default function ErrorPage({
+"use client";
+
+import { useEffect } from "react";
+
+export default function Error({
   error,
   reset,
 }: {
-  error: Error;
+  error: Error & { digest?: string };
   reset: () => void;
 }) {
+  // Optional: log client error once for diagnostics (kept as-is)
+  useEffect(() => {
+    // console.error(error);
+  }, [error]);
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-[#0E0E0E] text-[#F3F3F3] text-center">
-      <h1 className="text-4xl font-bold tracking-tight text-[#E57C23]">
-        System Failure
-      </h1>
-      <p className="mt-2 text-sm text-gray-400 max-w-md">
-        {error?.message || 'Something went wrong while processing your request.'}
-      </p>
+    <div className="mx-auto max-w-xl p-6">
+      <h2 className="text-xl font-semibold">Something went wrong.</h2>
       <button
+        className="mt-4 rounded-full bg-[#E57C23] px-4 py-2 font-semibold text-black"
         onClick={() => reset()}
-        className="mt-6 rounded-full bg-[#E57C23] px-5 py-2 font-semibold text-black hover:bg-[#ff923c] transition"
       >
-        Reboot
+        Try again
       </button>
-    </main>
+    </div>
   );
 }
