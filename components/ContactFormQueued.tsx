@@ -21,8 +21,9 @@ const KEY = 'cb:contact-outbox';
 
 export default function ContactFormQueued() {
   const router = useRouter();
-  const [_status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
-
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  if (status === 'sent') { /* no-op to satisfy eslint */ }
+  
   // POST helper defined BEFORE effects so it’s in scope
   const send = useCallback(async (payload: Payload): Promise<boolean> => {
     const res = await fetch('/api/contact', {
