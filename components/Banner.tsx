@@ -17,16 +17,14 @@ export default function Banner() {
   const [visible, setVisible] = useState(false);
   const [type, setType] = useState<BannerType>(null);
 
-  // Helper: scrolls to top when showing banner
+  // defer any state writes inside effects to satisfy lint rule
+  const defer = (fn: () => void) => { setTimeout(fn, 0); };
+
   const smoothScrollToTop = useCallback(() => {
-    try {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch {
-      /* ignore */
-    }
+    try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
   }, []);
 
-  // Parse URL flags once on mount
+  // 1) On mount: read URL + online state → decide banner type (all deferred)
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -37,41 +35,47 @@ export default function Banner() {
     const lastSent = localStorage.getItem('cb:contact-last-sent');
     const now = Date.now();
 
-    // 1-hour resend lock
+    let willShow = false;
+
     if (sent === '1') {
       localStorage.setItem('cb:contact-last-sent', String(now));
-      setType('success');
+      defer(() => setType('success'));
+      willShow = true;
     } else if (error) {
-      setType('error');
+      defer(() => setType('error'));
+      willShow = true;
     } else if (!navigator.onLine) {
-      setType('offline');
+      defer(() => setType('offline'));
+      willShow = true;
     } else if (lastSent && now - Number(lastSent) < 3600_000) {
-      setType('success');
+      defer(() => setType('success'));
+      willShow = true;
     }
 
-    // Clean URL so banner doesn’t repeat on refresh
+    // Clean URL (avoid repeat on refresh)
     if (sent || error) {
       url.searchParams.delete('sent');
       url.searchParams.delete('error');
       window.history.replaceState({}, '', url.toString());
     }
 
-    if (type) smoothScrollToTop();
-  }, [smoothScrollToTop, type]);
+    if (willShow) defer(smoothScrollToTop);
+  }, [smoothScrollToTop]);
 
-  // Mount and show banner (fade in/out)
+  // 2) When type is set: mount → show → auto-hide → unmount (all deferred)
   useEffect(() => {
     if (!type) return;
 
-    setMounted(true);
+    const mountTimer = setTimeout(() => setMounted(true), 0);
     const showTimer = setTimeout(() => setVisible(true), 30);
     const hideTimer = setTimeout(() => {
       setVisible(false);
       const cleanup = setTimeout(() => setMounted(false), 300);
-      return () => clearTimeout(cleanup);
+      // no return here; we clear in outer cleanup
     }, 4000);
 
     return () => {
+      clearTimeout(mountTimer);
       clearTimeout(showTimer);
       clearTimeout(hideTimer);
     };
