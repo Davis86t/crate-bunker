@@ -1,46 +1,43 @@
-'use client';
-import { useEffect } from 'react';
+// components/ServiceWorkerRegister.tsx
+// Purpose: Register / update the service worker in production.
+// - Registers /sw.js
+// - Listens for updates and auto-activates quietly (no reload).
+
+"use client";
+import { useEffect } from "react";
 
 export default function ServiceWorkerRegister() {
   useEffect(() => {
-    if (!('serviceWorker' in navigator)) return;
+    if (!("serviceWorker" in navigator)) return;
+    if (process.env.NODE_ENV !== "production") return;
 
-    navigator.serviceWorker
-      .register('/sw.js', { scope: '/' })
-      .then((reg) => {
-        const sendWarmup = () => {
-          const urls: string[] = [];
+    const url = "/sw.js";
+    let reg: ServiceWorkerRegistration | null = null;
 
-          // collect stylesheet links
-          document.querySelectorAll('link[rel="stylesheet"]').forEach((el) => {
-            if (el instanceof HTMLLinkElement && el.href) urls.push(el.href);
+    (async () => {
+      try {
+        reg = await navigator.serviceWorker.register(url, { scope: "/" });
+        // Trigger skip-waiting when an update is installed
+        reg.addEventListener("updatefound", () => {
+          const sw = reg?.installing;
+          if (!sw) return;
+          sw.addEventListener("statechange", () => {
+            if (
+              sw.state === "installed" &&
+              reg &&
+              navigator.serviceWorker.controller
+            ) {
+              sw.postMessage({ type: "SKIP_WAITING" });
+            }
           });
-
-          // collect scripts
-          document.querySelectorAll('script[src]').forEach((el) => {
-            if (el instanceof HTMLScriptElement && el.src) urls.push(el.src);
-          });
-
-          // same-origin only
-          const sameOrigin = urls.filter((u) => {
-            try { return new URL(u).origin === location.origin; } catch { return false; }
-          });
-
-          if (sameOrigin.length) reg.active?.postMessage({ type: 'WARMUP_ASSETS', urls: sameOrigin });
-        };
-
-        // if already active
-        if (reg.active) sendWarmup();
-
-        // once it’s ready/activated
-        navigator.serviceWorker.ready.then(() => sendWarmup()).catch(() => {});
-
-        // also after controller changes (first load after update)
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          if (navigator.serviceWorker.controller) sendWarmup();
         });
-      })
-      .catch(console.error);
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          // Optional: show a toast or silently continue
+        });
+      } catch {
+        // Progressive enhancement: ignore failures
+      }
+    })();
   }, []);
 
   return null;
