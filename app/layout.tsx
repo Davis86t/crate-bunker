@@ -8,6 +8,7 @@ import type { Metadata } from "next";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import Banner from "@/components/Banner";
 import { Suspense } from "react";
+import { Analytics } from "@vercel/analytics/next"
 
 // Fonts (loaded once; exposed via CSS variables)
 const geistSans = Geist({
@@ -45,6 +46,7 @@ export default function RootLayout({
 
         {/* Route content */}
         {children}
+        <Analytics />
       </body>
     </html>
   );
