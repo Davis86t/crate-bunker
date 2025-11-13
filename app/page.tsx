@@ -43,7 +43,7 @@ export default async function Page({
             Start a project
           </a>
           <a
-            href="/sitemap.xml"
+            href="#contact"
             className="rounded-full border border-white/20 px-6 py-3 font-semibold"
           >
             Learn more
